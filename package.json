@@ -1,0 +1,35 @@
+{
+  "name": "03_backend-mock",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "pm2:start": "npm run build && pm2 start dist/index.js --name \"chint-dtsu666-mock\"",
+    "pm2:stop": "pm2 stop chint-dtsu666-mock",
+    "pm2:restart": "pm2 restart chint-dtsu666-mock",
+    "pm2:logs": "pm2 logs chint-dtsu666-mock",
+    "pm2:delete": "pm2 delete chint-dtsu666-mock",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ioredis": "^5.11.1",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.9.3",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

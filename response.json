@@ -1,0 +1,265 @@
+{
+    "dashboard": {
+        "endpoint": "GET /api/dashboard/summary",
+        "summary": {
+            "total_mesin": 6,
+            "mesin_aktif": 4,
+            "energy_total_kwh": 37803.62,
+            "total_power_kw": 70.8
+        },
+        "machines": {
+            "total_items": 6,
+            "page": 1,
+            "per_page": 2,
+            "total_pages": 3,
+            "data": [
+                {
+                    "id": "CNC-01",
+                    "name": "CNC Milling Machine",
+                    "status": "running",
+                    "sector": "Sector A - Machining",
+                    "type": "Milling Rig",
+                    "metrics": {
+                        "run_time_hr": 342.9,
+                        "cycle_time_sec": 45,
+                        "power_kw": 18.2,
+                        "energy_kwh": 4.894
+                    },
+                    "voltage_phase": {
+                        "volt_u": 400.1,
+                        "volt_v": 400.3,
+                        "volt_w": 399.0
+                    },
+                    "current_phase": {
+                        "amp_u": 26.5,
+                        "amp_v": 26.1,
+                        "amp_w": 26.1
+                    }
+                },
+                {
+                    "id": "IM-04",
+                    "name": "Injection Molding",
+                    "status": "running",
+                    "sector": "Sector B - Plastics",
+                    "type": "Hydraulic Press",
+                    "metrics": {
+                        "run_time_hr": 512.5,
+                        "cycle_time_sec": 30,
+                        "power_kw": 25.1,
+                        "energy_kwh": 8.712
+                    },
+                    "voltage_phase": {
+                        "volt_u": 400.0,
+                        "volt_v": 399.9,
+                        "volt_w": 399.5
+                    },
+                    "current_phase": {
+                        "amp_u": 36.1,
+                        "amp_v": 36.5,
+                        "amp_w": 36.6
+                    }
+                }
+            ]
+        },
+        "meta": {
+            "server_time_local": "10:58:43",
+            "timezone": "UTC+7",
+            "api_status": "connected"
+        }
+    },
+    "details": {
+        "endpoint": "GET /api/dashboard/machines/{id}/telemetry",
+        "data": {
+            "device": {
+                "id": "IM-04",
+                "name": "Injection Molding",
+                "status": "running",
+                "location": "Sector B - Plastics",
+                "type": "Hydraulic Press",
+                "slave_id": 14,
+                "baud_rate": 9600,
+                "rtc": "2026-06-11T10:59:07+07:00",
+                "telemetry_pulse": "live_ok"
+            },
+            "realtime_telemetry": {
+                "current_avg_ampere": 36.3,
+                "voltage_avg_volt_ac": 399.6,
+                "active_load_power_kw": 25.02,
+                "cumulative_energy_kwh": 8712.54
+            },
+            "sensor_table": {
+                "calibration_class": "0.5S",
+                "parameters": [
+                    {
+                        "parameter": "Tegangan Listrik (Voltage)",
+                        "function": "Potensi beda gerak muatan antar fase line",
+                        "phase_u": 399.1,
+                        "phase_v": 400.5,
+                        "phase_w": 399.1,
+                        "unit": "Volt AC"
+                    },
+                    {
+                        "parameter": "Arus Beban Listrik (Current)",
+                        "function": "Laju muatan mengalir pada kumparan trafo",
+                        "phase_u": 36.3,
+                        "phase_v": 36.5,
+                        "phase_w": 36.0,
+                        "unit": "Ampere"
+                    },
+                    {
+                        "parameter": "Daya Aktif Sektor",
+                        "function": "Daya riil termanfaatkan untuk mekanik mesin",
+                        "phase_u": null,
+                        "phase_v": 25.02,
+                        "phase_w": null,
+                        "unit": "Kilowatts"
+                    },
+                    {
+                        "parameter": "Lama Jam Kerja (Operating Hours)",
+                        "function": "Total durasi operasional mesin aktif kumulatif",
+                        "phase_u": null,
+                        "phase_v": 512.47,
+                        "phase_w": null,
+                        "unit": "Hours"
+                    }
+                ]
+            },
+            "meta": {
+                "data_source": "Modbus TCP (encrypted gateway)",
+                "server_time_local": "10:59:09",
+                "timezone": "UTC+7"
+            }
+        }
+    },
+    "device_info": {
+        "endpoint": "GET /api/dashboard/machines/{id}/power-graph",
+        "data": {
+            "machine_id": "IM-04",
+            "metric": "power_kw",
+            "interval": "per_cycle",
+            "history": [
+                {
+                    "x": 1,
+                    "value": 50,
+                    "timestamp": "2026-06-11T10:00:00+07:00"
+                },
+                {
+                    "x": 2,
+                    "value": 90,
+                    "timestamp": "2026-06-11T10:00:30+07:00"
+                },
+                {
+                    "x": 3,
+                    "value": 38,
+                    "timestamp": "2026-06-11T10:01:00+07:00"
+                },
+                {
+                    "x": 4,
+                    "value": 125,
+                    "timestamp": "2026-06-11T10:01:30+07:00"
+                },
+                {
+                    "x": 5,
+                    "value": 168,
+                    "timestamp": "2026-06-11T10:02:00+07:00"
+                },
+                {
+                    "x": 6,
+                    "value": 170,
+                    "timestamp": "2026-06-11T10:02:30+07:00"
+                },
+                {
+                    "x": 7,
+                    "value": 130,
+                    "timestamp": "2026-06-11T10:03:00+07:00"
+                },
+                {
+                    "x": 8,
+                    "value": 75,
+                    "timestamp": "2026-06-11T10:03:30+07:00"
+                },
+                {
+                    "x": 9,
+                    "value": 15,
+                    "timestamp": "2026-06-11T10:04:00+07:00"
+                },
+                {
+                    "x": 10,
+                    "value": 198,
+                    "timestamp": "2026-06-11T10:04:30+07:00"
+                },
+                {
+                    "x": 11,
+                    "value": 170,
+                    "timestamp": "2026-06-11T10:05:00+07:00"
+                },
+                {
+                    "x": 12,
+                    "value": 167,
+                    "timestamp": "2026-06-11T10:05:30+07:00"
+                },
+                {
+                    "x": 13,
+                    "value": 110,
+                    "timestamp": "2026-06-11T10:06:00+07:00"
+                },
+                {
+                    "x": 14,
+                    "value": 60,
+                    "timestamp": "2026-06-11T10:06:30+07:00"
+                },
+                {
+                    "x": 15,
+                    "value": 100,
+                    "timestamp": "2026-06-11T10:07:00+07:00"
+                },
+                {
+                    "x": 16,
+                    "value": 122,
+                    "timestamp": "2026-06-11T10:07:30+07:00"
+                },
+                {
+                    "x": 17,
+                    "value": 83,
+                    "timestamp": "2026-06-11T10:08:00+07:00"
+                },
+                {
+                    "x": 18,
+                    "value": 88,
+                    "timestamp": "2026-06-11T10:08:30+07:00"
+                },
+                {
+                    "x": 19,
+                    "value": 99,
+                    "timestamp": "2026-06-11T10:09:00+07:00"
+                }
+            ],
+            "cycle_markers": [
+                {
+                    "cycle_id": 1,
+                    "x_start": 1,
+                    "x_end": 6,
+                    "label": "Cycle 1",
+                    "duration_sec": 150,
+                    "peak_power_kw": 170
+                },
+                {
+                    "cycle_id": 2,
+                    "x_start": 6,
+                    "x_end": 14,
+                    "label": "Cycle 2",
+                    "duration_sec": 240,
+                    "peak_power_kw": 198
+                },
+                {
+                    "cycle_id": 3,
+                    "x_start": 14,
+                    "x_end": 19,
+                    "label": "Cycle 3 (ongoing)",
+                    "duration_sec": null,
+                    "peak_power_kw": 122
+                }
+            ]
+        }
+    }
+}

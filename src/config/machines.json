@@ -1,0 +1,39 @@
+{
+  "_comment": "Metadata mesin yang tidak tersedia di Redis/PostgreSQL. Key = meter_id (sesuai 'id' di meters.yaml collector). '_default' dipakai bila meter_id tidak terdaftar.",
+  "_default": {
+    "name": "Unknown Machine",
+    "sector": "Unassigned",
+    "type": "Energy Meter",
+    "calibration_class": "0.5S"
+  },
+  "meter_01": {
+    "name": "Mesin Injeksi 1 - MA1600",
+    "sector": "Injection",
+    "type": "Hydraulic Press",
+    "calibration_class": "0.5S"
+  },
+  "meter_id3": {
+    "name": "Mesin Injeksi 3 - MA1600",
+    "sector": "Injection",
+    "type": "Hydraulic Press",
+    "calibration_class": "0.5S"
+  },
+  "meter_id4": {
+    "name": "Mesin Injeksi 4 - MA3200",
+    "sector": "Injection",
+    "type": "Hydraulic Press",
+    "calibration_class": "0.5S"
+  },
+  "utils_id5": {
+    "name": "Panel Utilitas 5 - Dryer",
+    "sector": "Utilities",
+    "type": "Panel Utilitas",
+    "calibration_class": "0.5S"
+  },
+  "utils_id6": {
+    "name": "Panel Utilitas 6 - Crusher",
+    "sector": "Utilities",
+    "type": "Panel Utilitas",
+    "calibration_class": "0.5S"
+  }
+}
