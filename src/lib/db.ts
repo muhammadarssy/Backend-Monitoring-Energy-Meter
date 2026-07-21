@@ -6,7 +6,12 @@ import { env } from '../config/env.js';
  * Tabel: meter_readings, production_sessions, production_cycles (lihat schema.sql collector).
  * Catatan: nama kolom disimpan lowercase oleh PostgreSQL (mis. Pt -> pt, ImpEp -> impep).
  */
-export const pool = new pg.Pool({ connectionString: env.dbUrl, max: 10 });
+export const pool = new pg.Pool({
+  connectionString: env.dbUrl,
+  max: env.dbPoolMax,
+  connectionTimeoutMillis: env.dbConnectionTimeoutMs,
+  idleTimeoutMillis: env.dbIdleTimeoutMs,
+});
 
 pool.on('error', (err) => {
   console.error(`[pg] ${err.message}`);
@@ -53,6 +58,122 @@ export interface DailyMetric {
   date: string;
   count: number;
   energyKwh: number;
+}
+
+/**
+ * Statistik seluruh meter dalam satu query. Dipakai summary agar jumlah query
+ * tidak bertambah mengikuti jumlah meter.
+ */
+export async function getCycleStatsBulk(
+  meterIds: string[],
+  todayStartUtc: Date
+): Promise<Map<string, CycleStats>> {
+  if (meterIds.length === 0) return new Map();
+
+  const result = await pool.query(
+    `WITH requested AS (
+       SELECT unnest($1::text[]) AS meter_id
+     ),
+     cycle_stats AS (
+       SELECT meter_id,
+              AVG(EXTRACT(EPOCH FROM (end_time - start_time)))
+                FILTER (WHERE end_time IS NOT NULL) AS avg_sec,
+              COUNT(*) FILTER (WHERE start_time >= $2)::int AS cycle_count_today
+         FROM production_cycles
+        WHERE meter_id = ANY($1::text[])
+        GROUP BY meter_id
+     ),
+     session_stats AS (
+       SELECT meter_id,
+              COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(end_time, now()) - start_time))), 0)
+                / 3600.0 AS hours
+         FROM production_sessions
+        WHERE meter_id = ANY($1::text[])
+        GROUP BY meter_id
+     )
+     SELECT r.meter_id, c.avg_sec,
+            COALESCE(s.hours, 0) AS hours,
+            COALESCE(c.cycle_count_today, 0)::int AS cycle_count_today
+       FROM requested r
+       LEFT JOIN cycle_stats c USING (meter_id)
+       LEFT JOIN session_stats s USING (meter_id)`,
+    [meterIds, todayStartUtc]
+  );
+
+  return new Map(
+    result.rows.map((row) => [
+      String(row.meter_id),
+      {
+        avgCycleSec: row.avg_sec === null || row.avg_sec === undefined ? null : Number(row.avg_sec),
+        runTimeHours: Number(row.hours ?? 0),
+        cycleCountToday: Number(row.cycle_count_today ?? 0),
+      },
+    ])
+  );
+}
+
+/**
+ * Heatmap semua meter terpilih dalam satu query, bukan delapan query per meter.
+ */
+export async function getDailyMetricsBulk(
+  meterIds: string[],
+  days: { date: string; startUtc: Date; endUtc: Date }[]
+): Promise<Map<string, DailyMetric[]>> {
+  const output = new Map<string, DailyMetric[]>();
+  for (const meterId of meterIds) output.set(meterId, []);
+  if (meterIds.length === 0 || days.length === 0) return output;
+
+  const result = await pool.query(
+    `WITH requested AS (
+       SELECT unnest($1::text[]) AS meter_id
+     ),
+     requested_days AS (
+       SELECT *
+         FROM unnest($2::text[], $3::timestamptz[], $4::timestamptz[])
+              AS d(date, start_utc, end_utc)
+     ),
+     cycle_counts AS (
+       SELECT c.meter_id, d.date, COUNT(*)::int AS count
+         FROM production_cycles c
+         JOIN requested_days d
+           ON c.start_time >= d.start_utc AND c.start_time < d.end_utc
+        WHERE c.meter_id = ANY($1::text[])
+        GROUP BY c.meter_id, d.date
+     ),
+     energy_totals AS (
+       SELECT m.meter_id, d.date, MAX(m.impep) - MIN(m.impep) AS energy
+         FROM meter_readings m
+         JOIN requested_days d
+           ON m.time >= d.start_utc AND m.time < d.end_utc
+        WHERE m.meter_id = ANY($1::text[])
+        GROUP BY m.meter_id, d.date
+     )
+     SELECT r.meter_id, d.date,
+            COALESCE(c.count, 0)::int AS count,
+            COALESCE(e.energy, 0) AS energy
+       FROM requested r
+       CROSS JOIN requested_days d
+       LEFT JOIN cycle_counts c ON c.meter_id = r.meter_id AND c.date = d.date
+       LEFT JOIN energy_totals e ON e.meter_id = r.meter_id AND e.date = d.date
+      ORDER BY r.meter_id, d.start_utc`,
+    [
+      meterIds,
+      days.map((day) => day.date),
+      days.map((day) => day.startUtc),
+      days.map((day) => day.endUtc),
+    ]
+  );
+
+  for (const row of result.rows) {
+    const meterId = String(row.meter_id);
+    const energy = Number(row.energy ?? 0);
+    output.get(meterId)?.push({
+      date: String(row.date),
+      count: Number(row.count ?? 0),
+      energyKwh: Math.max(0, energy),
+    });
+  }
+  return output;
 }
 
 /**

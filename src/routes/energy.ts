@@ -3,7 +3,8 @@ import { discoverMeters, findMeter, getReadings } from '../lib/redisClient.js';
 import {
   HistorySample,
   getCycleStats,
-  getDailyMetrics,
+  getCycleStatsBulk,
+  getDailyMetricsBulk,
   getPowerGraphData,
   getReadingsHistory,
 } from '../lib/db.js';
@@ -135,90 +136,122 @@ const phaseCurrent = (ctx: MachineContext) => {
 
 const livePowerKw = (ctx: MachineContext) => (ctx.status === 'offline' ? 0 : powerKw(ctx.latest));
 
+const summaryCache = new Map<
+  string,
+  { expiresAt: number; promise: Promise<Record<string, unknown>> }
+>();
+
+const buildSummaryResponse = async (page: number, perPage: number): Promise<Record<string, unknown>> => {
+  const meters = await discoverMeters();
+  const days = last7Days();
+  const todayStart = todayStartUtc();
+
+  // Data Redis tetap dibutuhkan untuk ringkasan global, tetapi query PostgreSQL
+  // hanya dijalankan untuk meter yang benar-benar tampil pada halaman ini.
+  const contexts = await Promise.all(
+    meters.map(async (ref) => ({ ref, ctx: await loadMachineContext(ref) }))
+  );
+  const totalItems = contexts.length;
+  const totalPages = Math.ceil(totalItems / perPage) || 0;
+  const startIndex = (page - 1) * perPage;
+  const pageContexts = contexts.slice(startIndex, startIndex + perPage);
+  const pageMeterIds = pageContexts.map(({ ref }) => ref.meterId);
+
+  // Sengaja berurutan: satu request summary hanya memakai satu koneksi DB pada
+  // satu waktu. Masing-masing fungsi melakukan agregasi untuk semua meter.
+  const statsByMeter = await getCycleStatsBulk(pageMeterIds, todayStart);
+  const dailyByMeter = await getDailyMetricsBulk(pageMeterIds, days);
+
+  const machinesData = pageContexts.map(({ ref, ctx }) => {
+    const stats = statsByMeter.get(ref.meterId) ?? {
+      avgCycleSec: null,
+      runTimeHours: 0,
+      cycleCountToday: 0,
+    };
+    const daily =
+      dailyByMeter.get(ref.meterId) ??
+      days.map((day) => ({ date: day.date, count: 0, energyKwh: 0 }));
+    const volt = phaseVoltage(ctx);
+    const curr = phaseCurrent(ctx);
+
+    return {
+      id: ref.meterId,
+      name: ctx.meta.name,
+      status: ctx.status,
+      sector: ctx.meta.sector,
+      type: ctx.meta.type,
+      metrics: {
+        run_time_hr: fmtHours(stats.runTimeHours),
+        cycle_time_sec: fmtSec(stats.avgCycleSec === null ? 0 : Math.round(stats.avgCycleSec)),
+        cycle_count: { value: stats.cycleCountToday, unit: 'cycles' },
+        power_kw: fmtPower(livePowerKw(ctx)),
+        energy_mwh: fmtEnergy(energyKwh(ctx.latest)),
+      },
+      voltage_phase: {
+        volt_u: fmtVolt(volt.u),
+        volt_v: fmtVolt(volt.v),
+        volt_w: fmtVolt(volt.w),
+      },
+      current_phase: {
+        amp_u: fmtAmp(curr.u),
+        amp_v: fmtAmp(curr.v),
+        amp_w: fmtAmp(curr.w),
+      },
+      heatmap_7d: buildHeatmap7d(daily),
+    };
+  });
+
+  const totalEnergyKwh = contexts.reduce((sum, { ctx }) => sum + energyKwh(ctx.latest), 0);
+  const totalPowerKw = contexts.reduce((sum, { ctx }) => sum + livePowerKw(ctx), 0);
+
+  return {
+    dashboard: {
+      endpoint: 'GET /api/dashboard/summary',
+      summary: {
+        total_mesin: totalItems,
+        mesin_aktif: contexts.filter(({ ctx }) => ctx.status === 'running').length,
+        energy_total: fmtEnergy(totalEnergyKwh),
+        total_power: fmtPower(totalPowerKw),
+      },
+      machines: {
+        total_items: totalItems,
+        page,
+        per_page: perPage,
+        total_pages: totalPages,
+        data: machinesData,
+      },
+      meta: {
+        server_time_local: localTimeStr(),
+        timezone: env.tzLabel,
+        api_status: 'connected',
+      },
+    },
+  };
+};
+
 // 1. GET /summary
 router.get('/summary', async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const perPage = parseInt(req.query.per_page as string) || 2;
+    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const perPage = Math.min(100, Math.max(1, parseInt(req.query.per_page as string, 10) || 2));
+    const cacheKey = `${page}:${perPage}`;
+    const now = Date.now();
 
-    const meters = await discoverMeters();
-    const days = last7Days();
-    const todayStart = todayStartUtc();
+    for (const [key, entry] of summaryCache) {
+      if (entry.expiresAt <= now) summaryCache.delete(key);
+    }
 
-    const machinesData = await Promise.all(
-      meters.map(async (ref) => {
-        const ctx = await loadMachineContext(ref);
-        const [stats, daily] = await Promise.all([
-          getCycleStats(ref.meterId, todayStart),
-          getDailyMetrics(ref.meterId, days),
-        ]);
+    let cached = summaryCache.get(cacheKey);
+    if (!cached) {
+      const promise = buildSummaryResponse(page, perPage);
+      cached = { expiresAt: now + env.summaryCacheTtlMs, promise };
+      summaryCache.set(cacheKey, cached);
+      promise.catch(() => {
+        if (summaryCache.get(cacheKey)?.promise === promise) summaryCache.delete(cacheKey);
+      });
+    }
 
-        const volt = phaseVoltage(ctx);
-        const curr = phaseCurrent(ctx);
-
-        return {
-          id: ref.meterId,
-          name: ctx.meta.name,
-          status: ctx.status,
-          sector: ctx.meta.sector,
-          type: ctx.meta.type,
-          metrics: {
-            run_time_hr: fmtHours(stats.runTimeHours),
-            cycle_time_sec: fmtSec(stats.avgCycleSec === null ? 0 : Math.round(stats.avgCycleSec)),
-            cycle_count: { value: stats.cycleCountToday, unit: 'cycles' },
-            power_kw: fmtPower(livePowerKw(ctx)),
-            energy_mwh: fmtEnergy(energyKwh(ctx.latest)),
-          },
-          voltage_phase: {
-            volt_u: fmtVolt(volt.u),
-            volt_v: fmtVolt(volt.v),
-            volt_w: fmtVolt(volt.w),
-          },
-          current_phase: {
-            amp_u: fmtAmp(curr.u),
-            amp_v: fmtAmp(curr.v),
-            amp_w: fmtAmp(curr.w),
-          },
-          heatmap_7d: buildHeatmap7d(daily),
-        };
-      })
-    );
-
-    const total_mesin = machinesData.length;
-    const mesin_aktif = machinesData.filter((m) => m.status === 'running').length;
-    const energy_total_kwh =
-      Math.round(machinesData.reduce((sum, m) => sum + (m.metrics.energy_mwh.unit === 'MWh' ? m.metrics.energy_mwh.value * 1000 : m.metrics.energy_mwh.value), 0) * 100) / 100;
-    const total_power_kw =
-      Math.round(machinesData.reduce((sum, m) => sum + m.metrics.power_kw.value, 0) * 10) / 10;
-
-    const totalItems = machinesData.length;
-    const totalPages = Math.ceil(totalItems / perPage) || 0;
-    const startIndex = (page - 1) * perPage;
-    const paginatedData = machinesData.slice(startIndex, startIndex + perPage);
-
-    res.json({
-      dashboard: {
-        endpoint: 'GET /api/dashboard/summary',
-        summary: {
-          total_mesin,
-          mesin_aktif,
-          energy_total: fmtEnergy(energy_total_kwh),
-          total_power: fmtPower(total_power_kw),
-        },
-        machines: {
-          total_items: totalItems,
-          page,
-          per_page: perPage,
-          total_pages: totalPages,
-          data: paginatedData,
-        },
-        meta: {
-          server_time_local: localTimeStr(),
-          timezone: env.tzLabel,
-          api_status: 'connected',
-        },
-      },
-    });
+    res.json(await cached.promise);
   } catch (error: any) {
     res.status(500).json({
       success: false,
