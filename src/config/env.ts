@@ -11,8 +11,17 @@ export const env = {
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379/0',
   redisKeyPrefix: process.env.REDIS_KEY_PREFIX || 'energy',
 
-  // PostgreSQL — penyimpanan historis (readings, sessions, cycles)
+  // PostgreSQL — penyimpanan historis collector (readings, sessions, cycles)
   dbUrl: process.env.DB_URL || 'postgresql://user:pass@localhost:5432/energy_db',
+
+  // PostgreSQL — data mart (schema datamart.*). Pool terpisah dari DB_URL
+  // agar query Load tidak tercampur dengan meter_readings collector.
+  datamartDbUrl:
+    process.env.DATAMART_DB_URL ||
+    process.env.DB_URL ||
+    'postgresql://user:pass@localhost:5432/energy_db',
+  datamartTimezone: process.env.DATAMART_TIMEZONE || 'Asia/Jakarta',
+
   dbPoolMax: Math.max(1, parseInt(process.env.DB_POOL_MAX || '4', 10)),
   dbConnectionTimeoutMs: Math.max(
     1000,

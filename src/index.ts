@@ -1,8 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import energyRouter from './routes/energy.js';
+import loadRouter from './routes/load.js';
 import { env } from './config/env.js';
 import { pingDb } from './lib/db.js';
+import { pingDatamart } from './lib/datamart.js';
 import { redis } from './lib/redisClient.js';
 
 const app = express();
@@ -36,24 +38,31 @@ app.get('/', (req, res) => {
       device_info: '/api/dashboard/machines/:id/device-info',
       power_graph: '/api/dashboard/machines/:id/power-graph',
       power_history: '/api/dashboard/machines/:id/power-history',
+      load: '/api/dashboard/load',
       health: '/health'
     }
   });
 });
 
+const redactUrl = (url: string) => url.replace(/:[^:@/]+@/, ':****@');
+
 // Health check — status koneksi sumber data
 app.get('/health', async (req, res) => {
-  const dbOk = await pingDb();
+  const [dbOk, datamart] = await Promise.all([pingDb(), pingDatamart()]);
   const redisOk = redis.status === 'ready';
-  res.status(dbOk && redisOk ? 200 : 503).json({
-    status: dbOk && redisOk ? 'ok' : 'degraded',
+  const healthy = dbOk && redisOk && datamart.ok && datamart.schema;
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
     redis: redisOk ? 'connected' : redis.status,
-    postgres: dbOk ? 'connected' : 'unavailable'
+    postgres: dbOk ? 'connected' : 'unavailable',
+    datamart: datamart.ok ? 'connected' : 'unavailable',
+    datamart_schema: datamart.schema ? 'present' : 'missing',
   });
 });
 
 // Register routes
 app.use('/api/dashboard', energyRouter);
+app.use('/api/dashboard', loadRouter);
 
 // Start listening
 app.listen(PORT, () => {
@@ -62,7 +71,8 @@ app.listen(PORT, () => {
   console.log(`🌐 Local URL: http://localhost:${PORT}`);
   console.log(`⚡ API Root: http://localhost:${PORT}/api/dashboard`);
   console.log(`📦 Redis: ${env.redisUrl} (prefix: ${env.redisKeyPrefix})`);
-  console.log(`🗄️  PostgreSQL: ${env.dbUrl.replace(/:[^:@/]+@/, ':****@')}`);
+  console.log(`🗄️  PostgreSQL (collector): ${redactUrl(env.dbUrl)}`);
+  console.log(`📊 PostgreSQL (datamart):   ${redactUrl(env.datamartDbUrl)} (tz: ${env.datamartTimezone})`);
   console.log(`===================================================`);
   console.log(`Endpoints available:`);
   console.log(` - GET /api/dashboard/summary`);
@@ -71,6 +81,7 @@ app.listen(PORT, () => {
   console.log(` - GET /api/dashboard/machines/:id/device-info`);
   console.log(` - GET /api/dashboard/machines/:id/power-graph`);
   console.log(` - GET /api/dashboard/machines/:id/power-history`);
+  console.log(` - GET /api/dashboard/load`);
   console.log(` - GET /health`);
   console.log(`===================================================`);
 });
