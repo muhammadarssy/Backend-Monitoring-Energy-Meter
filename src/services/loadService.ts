@@ -1,9 +1,11 @@
 import { env } from '../config/env.js';
 import {
   DatamartAggRow,
+  DatamartRuntimeRow,
   queryDaily,
   queryHourly,
   queryMonthly,
+  queryRuntimeSessions,
 } from '../lib/datamart.js';
 import { getMeta, isoWithOffset } from './machineService.js';
 
@@ -25,11 +27,49 @@ export interface LoadTotals {
   lwbp: number;
 }
 
+export interface LoadRuntimeTotals {
+  running_seconds: number;
+  running_hours: number;
+  session_count: number;
+  still_running: boolean;
+}
+
+export interface LoadRuntimeSession {
+  meter_id: string;
+  name: string;
+  device_type: string;
+  session_no: number;
+  start_time: string | null;
+  stop_time: string | null;
+  running_seconds: number;
+  running_hours: number;
+  still_running: boolean;
+  sample_count: number;
+  pt_max: number | null;
+}
+
+export interface LoadRuntimeBucket {
+  i: number;
+  label: string;
+  timestamp: string;
+  running_seconds: number;
+  running_hours: number;
+  session_count: number;
+}
+
+export interface LoadRuntime {
+  data_source: string;
+  totals: LoadRuntimeTotals;
+  sessions: LoadRuntimeSession[];
+  buckets: LoadRuntimeBucket[];
+}
+
 export interface LoadMachineSeries {
   id: string;
   name: string;
   buckets: LoadBucket[];
   totals: LoadTotals;
+  runtime: LoadRuntime;
 }
 
 export interface LoadResult {
@@ -40,6 +80,7 @@ export interface LoadResult {
   buckets: LoadBucket[];
   totals: LoadTotals;
   machines: LoadMachineSeries[] | null;
+  runtime: LoadRuntime;
   meta: {
     period_label: string;
     resolution: string;
@@ -63,6 +104,7 @@ const MONTH_NAMES_FULL = [
 const pad = (n: number) => n.toString().padStart(2, '0');
 
 const roundEnergy = (n: number) => Math.round(n * 1000) / 1000;
+const roundHours = (seconds: number) => Math.round((seconds / 3600) * 1000) / 1000;
 
 interface CalDate {
   year: number;
@@ -343,6 +385,149 @@ function uniqueMeterIds(rows: DatamartAggRow[]): string[] {
   return [...new Set(rows.map((r) => r.meter_id))];
 }
 
+function runtimeTotalsOf(rows: DatamartRuntimeRow[]): LoadRuntimeTotals {
+  let seconds = 0;
+  let stillRunning = false;
+  for (const r of rows) {
+    seconds += r.running_seconds;
+    if (r.still_running) stillRunning = true;
+  }
+  return {
+    running_seconds: roundEnergy(seconds),
+    running_hours: roundHours(seconds),
+    session_count: rows.length,
+    still_running: stillRunning,
+  };
+}
+
+function mapRuntimeSessions(rows: DatamartRuntimeRow[]): LoadRuntimeSession[] {
+  return rows.map((r) => ({
+    meter_id: r.meter_id,
+    name: getMeta(r.meter_id).name,
+    device_type: r.device_type,
+    session_no: r.session_no,
+    start_time: r.start_time ? isoWithOffset(r.start_time) : null,
+    stop_time: r.stop_time ? isoWithOffset(r.stop_time) : null,
+    running_seconds: roundEnergy(r.running_seconds),
+    running_hours: roundHours(r.running_seconds),
+    still_running: r.still_running,
+    sample_count: r.sample_count,
+    pt_max: r.pt_max === null ? null : roundEnergy(r.pt_max),
+  }));
+}
+
+/** Slot runtime: harian (1 hari), mingguan (7 hari), selain itu ikut grain energi. */
+function buildRuntimeSlots(
+  period: LoadPeriod,
+  ref: CalDate,
+  energySlots: Slot[],
+  energyGrain: 'hour' | 'day' | 'month'
+): { slots: Slot[]; grain: 'hour' | 'day' | 'month' } {
+  if (period === 'daily') {
+    return {
+      grain: 'day',
+      slots: [
+        {
+          i: 0,
+          time: wibMidnightUtc(ref),
+          label: `${ref.day} ${MONTH_NAMES[ref.month - 1]}`,
+        },
+      ],
+    };
+  }
+  if (period === 'weekly') {
+    const monday = startOfMonday(ref);
+    const slots: Slot[] = [];
+    for (let d = 0; d < 7; d += 1) {
+      const day = addCalendarDays(monday, d);
+      const wd = new Date(Date.UTC(day.year, day.month - 1, day.day)).getUTCDay();
+      slots.push({
+        i: d,
+        time: wibMidnightUtc(day),
+        label: DAY_NAMES[wd],
+      });
+    }
+    return { grain: 'day', slots };
+  }
+  return { slots: energySlots, grain: energyGrain };
+}
+
+function indexRuntime(rows: DatamartRuntimeRow[], grain: 'hour' | 'day' | 'month') {
+  const map = new Map<string, { seconds: number; count: number }>();
+  for (const r of rows) {
+    const key = `${r.meter_id}|${bucketKey(r.bucket_start, grain)}`;
+    const prev = map.get(key);
+    if (prev) {
+      prev.seconds += r.running_seconds;
+      prev.count += 1;
+    } else {
+      map.set(key, { seconds: r.running_seconds, count: 1 });
+    }
+  }
+  return map;
+}
+
+function fillRuntimeBuckets(
+  slots: Slot[],
+  grain: 'hour' | 'day' | 'month',
+  indexed: Map<string, { seconds: number; count: number }>,
+  meterIds: string[] | null,
+  singleMeter?: string
+): LoadRuntimeBucket[] {
+  return slots.map((s) => {
+    let seconds = 0;
+    let count = 0;
+    const timeKey = bucketKey(s.time, grain);
+    if (singleMeter) {
+      const hit = indexed.get(`${singleMeter}|${timeKey}`);
+      if (hit) {
+        seconds = hit.seconds;
+        count = hit.count;
+      }
+    } else if (meterIds) {
+      for (const id of meterIds) {
+        const hit = indexed.get(`${id}|${timeKey}`);
+        if (hit) {
+          seconds += hit.seconds;
+          count += hit.count;
+        }
+      }
+    } else {
+      for (const [key, hit] of indexed) {
+        if (key.endsWith(`|${timeKey}`)) {
+          seconds += hit.seconds;
+          count += hit.count;
+        }
+      }
+    }
+    return {
+      i: s.i,
+      label: s.label,
+      timestamp: isoWithOffset(s.time),
+      running_seconds: roundEnergy(seconds),
+      running_hours: roundHours(seconds),
+      session_count: count,
+    };
+  });
+}
+
+function assembleRuntime(
+  rows: DatamartRuntimeRow[],
+  slots: Slot[],
+  grain: 'hour' | 'day' | 'month',
+  meterIds: string[] | null,
+  singleMeter?: string
+): LoadRuntime {
+  const scoped = singleMeter ? rows.filter((r) => r.meter_id === singleMeter) : rows;
+  const indexed = indexRuntime(scoped, grain);
+  return {
+    data_source: 'datamart.meter_runtime_session',
+    totals: runtimeTotalsOf(scoped),
+    sessions: mapRuntimeSessions(scoped),
+    buckets: fillRuntimeBuckets(slots, grain, indexed, meterIds, singleMeter),
+  };
+}
+
 export function parseLoadDate(raw: string | undefined): CalDate | null {
   if (!raw) return null;
   return parseDateParam(raw);
@@ -366,15 +551,16 @@ export async function getLoadSeries(opts: {
     filterIds = [opts.meterId];
   }
 
-  const rows =
-    grain === 'hour'
-      ? await queryHourly(from, to, filterIds)
-      : grain === 'day'
-        ? await queryDaily(from, to, filterIds)
-        : await queryMonthly(from, to, filterIds);
+  const energyQuery =
+    grain === 'hour' ? queryHourly : grain === 'day' ? queryDaily : queryMonthly;
+  const [rows, runtimeRows] = await Promise.all([
+    energyQuery(from, to, filterIds),
+    queryRuntimeSessions(from, to, filterIds),
+  ]);
 
   const indexed = indexRows(rows, grain);
   const dateStr = `${date.year}-${pad(date.month)}-${pad(date.day)}`;
+  const runtimeSlots = buildRuntimeSlots(period, date, slots, grain);
 
   const meta = {
     period_label: formatPeriodLabel(period, date),
@@ -389,7 +575,13 @@ export async function getLoadSeries(opts: {
     const machines: LoadMachineSeries[] = ids.map((id) => {
       const buckets = fillBuckets(slots, grain, indexed, null, id);
       const totals = totalsOf(buckets);
-      return { id, name: getMeta(id).name, buckets, totals };
+      return {
+        id,
+        name: getMeta(id).name,
+        buckets,
+        totals,
+        runtime: assembleRuntime(runtimeRows, runtimeSlots.slots, runtimeSlots.grain, null, id),
+      };
     });
     const totals = machines.reduce(
       (acc, m) => {
@@ -412,6 +604,12 @@ export async function getLoadSeries(opts: {
         lwbp: roundEnergy(totals.lwbp),
       },
       machines,
+      runtime: assembleRuntime(
+        runtimeRows,
+        runtimeSlots.slots,
+        runtimeSlots.grain,
+        ids.length ? ids : null
+      ),
       meta,
     };
   }
@@ -436,6 +634,13 @@ export async function getLoadSeries(opts: {
       lwbp: roundEnergy(totals.lwbp),
     },
     machines: null,
+    runtime: assembleRuntime(
+      runtimeRows,
+      runtimeSlots.slots,
+      runtimeSlots.grain,
+      filterIds,
+      opts.meterId && opts.meterId !== 'all' ? opts.meterId : undefined
+    ),
     meta,
   };
 }

@@ -33,6 +33,7 @@ function parseMeterIds(raw: unknown): string[] | null {
  *   daily/weekly  → datamart.meter_agg_1h
  *   monthly       → datamart.meter_agg_daily
  *   yearly        → datamart.meter_agg_monthly
+ *   runtime       → datamart.meter_runtime_session (semua period)
  */
 router.get('/load', async (req: Request, res: Response) => {
   try {

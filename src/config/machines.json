@@ -6,8 +6,14 @@
     "type": "Energy Meter",
     "calibration_class": "0.5S"
   },
-  "meter_01": {
+  "meter_id1": {
     "name": "Mesin Injeksi 1 - MA1600",
+    "sector": "Injection",
+    "type": "Hydraulic Press",
+    "calibration_class": "0.5S"
+  },
+  "meter_id2": {
+    "name": "Mesin Injeksi 2 - MA1600",
     "sector": "Injection",
     "type": "Hydraulic Press",
     "calibration_class": "0.5S"
@@ -25,13 +31,13 @@
     "calibration_class": "0.5S"
   },
   "utils_id5": {
-    "name": "Panel Utilitas 5 - Dryer",
+    "name": "Panel Utilitas 5 - Crusher + Cooling",
     "sector": "Utilities",
     "type": "Panel Utilitas",
     "calibration_class": "0.5S"
   },
   "utils_id6": {
-    "name": "Panel Utilitas 6 - Crusher",
+    "name": "Panel Utilitas 6 - Dryer + Mixer",
     "sector": "Utilities",
     "type": "Panel Utilitas",
     "calibration_class": "0.5S"

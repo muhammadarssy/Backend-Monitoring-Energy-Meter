@@ -24,6 +24,19 @@ export interface DatamartAggRow {
   lwbp: number;
 }
 
+export interface DatamartRuntimeRow {
+  bucket_start: Date;
+  meter_id: string;
+  device_type: string;
+  session_no: number;
+  start_time: Date | null;
+  stop_time: Date | null;
+  running_seconds: number;
+  still_running: boolean;
+  sample_count: number;
+  pt_max: number | null;
+}
+
 const num = (v: unknown): number => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -92,6 +105,49 @@ export function queryDaily(
     from,
     to,
     meterIds
+  );
+}
+
+const numOrNull = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+/** Sesi nyala harian (job runtime_daily.py). energy = 1 baris/sesi; utils = 1 baris/hari. */
+export function queryRuntimeSessions(
+  from: Date,
+  to: Date,
+  meterIds: string[] | null
+): Promise<DatamartRuntimeRow[]> {
+  const select = `
+    SELECT bucket_start, meter_id, device_type, session_no,
+           start_time, stop_time, running_seconds, still_running,
+           sample_count, pt_max
+      FROM datamart.meter_runtime_session
+     WHERE bucket_start >= $1 AND bucket_start < $2`;
+  const sqlAll = `${select} ORDER BY bucket_start, meter_id, session_no`;
+  const sqlFiltered = `${select} AND meter_id = ANY($3::text[]) ORDER BY bucket_start, meter_id, session_no`;
+
+  if (meterIds && meterIds.length === 0) return Promise.resolve([]);
+  const resPromise =
+    meterIds === null
+      ? datamartPool.query(sqlAll, [from, to])
+      : datamartPool.query(sqlFiltered, [from, to, meterIds]);
+
+  return resPromise.then((res) =>
+    res.rows.map((r) => ({
+      bucket_start: new Date(r.bucket_start),
+      meter_id: String(r.meter_id),
+      device_type: String(r.device_type),
+      session_no: Number(r.session_no) || 0,
+      start_time: r.start_time ? new Date(r.start_time) : null,
+      stop_time: r.stop_time ? new Date(r.stop_time) : null,
+      running_seconds: num(r.running_seconds),
+      still_running: Boolean(r.still_running),
+      sample_count: Number(r.sample_count) || 0,
+      pt_max: numOrNull(r.pt_max),
+    }))
   );
 }
 
