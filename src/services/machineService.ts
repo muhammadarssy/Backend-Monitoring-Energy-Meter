@@ -40,6 +40,20 @@ export function getMeta(meterId: string): MachineMeta {
   return META._default;
 }
 
+const META_SKIP = new Set(['_default', '_comment']);
+
+/** Meter yang terdaftar di machines.json (bukan Unknown / _default). */
+export function listKnownMeters(): { id: string; meta: MachineMeta }[] {
+  const out: { id: string; meta: MachineMeta }[] = [];
+  for (const [id, entry] of Object.entries(META)) {
+    if (META_SKIP.has(id) || !entry || typeof entry !== 'object') continue;
+    const meta = entry as MachineMeta;
+    if (/^unknown/i.test(String(meta.name || '').trim())) continue;
+    out.push({ id, meta });
+  }
+  return out;
+}
+
 // ── Helper waktu / zona ────────────────────────────────────────────────────
 const pad = (n: number) => n.toString().padStart(2, '0');
 

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import energyRouter from './routes/energy.js';
 import loadRouter from './routes/load.js';
+import reportRouter from './routes/report.js';
 import { env } from './config/env.js';
 import { pingDb } from './lib/db.js';
 import { pingDatamart } from './lib/datamart.js';
@@ -39,6 +40,7 @@ app.get('/', (req, res) => {
       power_graph: '/api/dashboard/machines/:id/power-graph',
       power_history: '/api/dashboard/machines/:id/power-history',
       load: '/api/dashboard/load',
+      report: '/api/dashboard/report',
       health: '/health'
     }
   });
@@ -63,6 +65,7 @@ app.get('/health', async (req, res) => {
 // Register routes
 app.use('/api/dashboard', energyRouter);
 app.use('/api/dashboard', loadRouter);
+app.use('/api/dashboard', reportRouter);
 
 // Start listening
 app.listen(PORT, () => {
@@ -82,6 +85,7 @@ app.listen(PORT, () => {
   console.log(` - GET /api/dashboard/machines/:id/power-graph`);
   console.log(` - GET /api/dashboard/machines/:id/power-history`);
   console.log(` - GET /api/dashboard/load`);
+  console.log(` - GET /api/dashboard/report`);
   console.log(` - GET /health`);
   console.log(`===================================================`);
 });
