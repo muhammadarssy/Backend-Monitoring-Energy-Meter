@@ -138,7 +138,13 @@ function sumRuntime(rows: DatamartRuntimeRow[]): ReportRuntime {
 }
 
 function mapSessions(rows: DatamartRuntimeRow[]): ReportSession[] {
-  return rows.map((r) => ({
+  return [...rows]
+    .sort((a, b) => {
+      const ta = a.start_time ? a.start_time.getTime() : Number.POSITIVE_INFINITY;
+      const tb = b.start_time ? b.start_time.getTime() : Number.POSITIVE_INFINITY;
+      return ta - tb;
+    })
+    .map((r) => ({
     meter_id: r.meter_id,
     name: getMeta(r.meter_id).name,
     device_type: r.device_type,

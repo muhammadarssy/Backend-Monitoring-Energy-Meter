@@ -126,8 +126,8 @@ export function queryRuntimeSessions(
            sample_count, pt_max
       FROM datamart.meter_runtime_session
      WHERE bucket_start >= $1 AND bucket_start < $2`;
-  const sqlAll = `${select} ORDER BY bucket_start, meter_id, session_no`;
-  const sqlFiltered = `${select} AND meter_id = ANY($3::text[]) ORDER BY bucket_start, meter_id, session_no`;
+  const sqlAll = `${select} ORDER BY start_time NULLS LAST, bucket_start, session_no`;
+  const sqlFiltered = `${select} AND meter_id = ANY($3::text[]) ORDER BY start_time NULLS LAST, bucket_start, session_no`;
 
   if (meterIds && meterIds.length === 0) return Promise.resolve([]);
   const resPromise =
