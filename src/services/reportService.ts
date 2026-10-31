@@ -3,6 +3,7 @@ import {
   DatamartAggRow,
   DatamartRuntimeRow,
   queryDaily,
+  queryHourly,
   queryMonthly,
   queryRuntimeSessions,
 } from '../lib/datamart.js';
@@ -33,6 +34,7 @@ export interface ReportSession {
   stop_time: string | null;
   running_seconds: number;
   still_running: boolean;
+  energy_kwh: number;
 }
 
 export interface ReportMachine {
@@ -153,7 +155,29 @@ function mapSessions(rows: DatamartRuntimeRow[]): ReportSession[] {
     stop_time: r.stop_time ? isoWithOffset(r.stop_time) : null,
     running_seconds: roundEnergy(r.running_seconds),
     still_running: r.still_running,
+    energy_kwh: 0,
   }));
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** kWh sesi dari irisan jam di meter_agg_1h. Jam pinggir dihitung proporsional. */
+function withSessionKwh(sessions: ReportSession[], hours: DatamartAggRow[]): ReportSession[] {
+  return sessions.map((session) => {
+    const start = session.start_time ? new Date(session.start_time).getTime() : NaN;
+    const stop = session.stop_time ? new Date(session.stop_time).getTime() : Date.now();
+    if (!Number.isFinite(start) || !Number.isFinite(stop) || stop <= start) {
+      return session;
+    }
+    let kwh = 0;
+    for (const hour of hours) {
+      const hourStart = hour.bucket_start.getTime();
+      const overlap = Math.min(stop, hourStart + HOUR_MS) - Math.max(start, hourStart);
+      if (overlap <= 0) continue;
+      kwh += (hour.wbp + hour.lwbp) * (overlap / HOUR_MS);
+    }
+    return { ...session, energy_kwh: roundEnergy(kwh) };
+  });
 }
 
 function resolveMeterIds(requested: string[] | null): string[] {
@@ -230,9 +254,10 @@ export async function getReport(opts: {
   const ids = resolveMeterIds(requested);
 
   const energyQuery = period === 'monthly' ? queryMonthly : queryDaily;
-  const [energyRows, runtimeRows] = await Promise.all([
+  const [energyRows, runtimeRows, hourlyRows] = await Promise.all([
     ids.length ? energyQuery(windowFrom, windowTo, ids) : Promise.resolve([] as DatamartAggRow[]),
     ids.length ? queryRuntimeSessions(windowFrom, windowTo, ids) : Promise.resolve([] as DatamartRuntimeRow[]),
+    ids.length ? queryHourly(windowFrom, windowTo, ids) : Promise.resolve([] as DatamartAggRow[]),
   ]);
 
   const energyByMeter = new Map<string, DatamartAggRow[]>();
@@ -247,6 +272,12 @@ export async function getReport(opts: {
     if (list) list.push(row);
     else runtimeByMeter.set(row.meter_id, [row]);
   }
+  const hourlyByMeter = new Map<string, DatamartAggRow[]>();
+  for (const row of hourlyRows) {
+    const list = hourlyByMeter.get(row.meter_id);
+    if (list) list.push(row);
+    else hourlyByMeter.set(row.meter_id, [row]);
+  }
 
   const machines: ReportMachine[] = ids.map((id) => {
     const meta = getMeta(id);
@@ -257,7 +288,7 @@ export async function getReport(opts: {
       type: meta.type,
       energy: sumEnergy(energyByMeter.get(id) || []),
       runtime: sumRuntime(rtRows),
-      sessions: mapSessions(rtRows),
+      sessions: withSessionKwh(mapSessions(rtRows), hourlyByMeter.get(id) || []),
     };
   });
 

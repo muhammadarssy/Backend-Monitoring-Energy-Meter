@@ -4,6 +4,7 @@ import energyRouter from './routes/energy.js';
 import loadRouter from './routes/load.js';
 import reportRouter from './routes/report.js';
 import simpleReportRouter from './routes/simpleReport.js';
+import billingRouter from './routes/billing.js';
 import { env } from './config/env.js';
 import { pingDb } from './lib/db.js';
 import { pingDatamart } from './lib/datamart.js';
@@ -43,6 +44,10 @@ app.get('/', (req, res) => {
       load: '/api/dashboard/load',
       report: '/api/dashboard/report',
       simple_report: '/api/dashboard/simple-report',
+      billing: '/api/dashboard/billing',
+      billing_tenants: '/api/dashboard/billing/tenants',
+      billing_day_notes: '/api/dashboard/billing/day-notes',
+      billing_day_sewa: '/api/dashboard/billing/day-sewa',
       health: '/health'
     }
   });
@@ -69,6 +74,7 @@ app.use('/api/dashboard', energyRouter);
 app.use('/api/dashboard', loadRouter);
 app.use('/api/dashboard', reportRouter);
 app.use('/api/dashboard', simpleReportRouter);
+app.use('/api/dashboard', billingRouter);
 
 // Start listening
 app.listen(PORT, () => {
@@ -90,6 +96,14 @@ app.listen(PORT, () => {
   console.log(` - GET /api/dashboard/load`);
   console.log(` - GET /api/dashboard/report`);
   console.log(` - GET /api/dashboard/simple-report`);
+  console.log(` - GET /api/dashboard/billing?from=YYYY-MM-DD`);
+  console.log(` - PUT /api/dashboard/billing`);
+  console.log(` - GET /api/dashboard/billing/tenants`);
+  console.log(` - GET /api/dashboard/billing/day-notes?from=&to=`);
+  console.log(` - PUT /api/dashboard/billing/day-notes`);
+  console.log(` - GET /api/dashboard/billing/day-sewa?from=&to=`);
+  console.log(` - PUT /api/dashboard/billing/day-sewa`);
+  console.log(` - POST /api/dashboard/billing/tenants`);
   console.log(` - GET /health`);
   console.log(`===================================================`);
 });
